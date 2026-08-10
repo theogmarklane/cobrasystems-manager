@@ -121,7 +121,8 @@ class Utility(commands.Cog):
                 "`autorole` `welcome` `setlog`\n"
                 "`reactionrole` / `rr`\n"
                 "`removereactionrole`\n"
-                "`giverole` `takerole`"
+                "`giverole` `takerole`\n"
+                "`ticketpanel` `ticketclose` `ticketrename`"
             ),
             inline=True
         )
@@ -141,7 +142,9 @@ class Utility(commands.Cog):
                 "1. `/setlog #mod-logs` — Enable logging\n"
                 "2. `/welcome #welcome` — Welcome messages\n"
                 "3. `/autorole @Member` — Auto role on join\n"
-                "4. `/reactionrole` — Create reaction roles"
+                "4. `/reactionrole` — Create reaction roles\n"
+                "5. `/ticketpanel #tickets` — Post a ticket panel\n"
+                "6. `/ticketpanel #tickets #ticket-logs` — Add ticket transcripts/logs"
             ),
             inline=False
         )

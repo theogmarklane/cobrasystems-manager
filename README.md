@@ -17,6 +17,7 @@ A powerful, modern Discord server management bot written in Python using **disco
 - **Auto Role** — Automatically give a role when someone joins
 - **Welcome Messages** — Customizable welcome embeds
 - **Reaction Roles** — Create reaction role menus easily
+- **Tickets** — Button-based ticket panel for support, purchase, bugs, and other requests, with transcripts and close logs
 - `giverole` / `takerole` — Manually manage roles
 - Moderation logging channel
 
@@ -87,6 +88,8 @@ python bot.py
 /welcome #welcome          → Enable welcome messages
 /autorole @Member          → Auto-role on join
 /reactionrole "Roles" "React to get roles!" 🎮 @Gamer
+/ticketpanel #tickets      → Post a ticket panel
+/ticketpanel #tickets #ticket-logs → Also send transcripts and close logs there
 ```
 
 ---
@@ -104,6 +107,7 @@ cobra_systems_manager/
 └── cogs/
     ├── events.py       # Join/leave, logging
     ├── moderation.py   # All mod commands
+    ├── tickets.py      # Ticket panel and ticket channels
     ├── roles.py        # Auto role, reaction roles, welcome
     └── utility.py      # Help, info commands
 ```
