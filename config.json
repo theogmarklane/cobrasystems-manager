@@ -1,0 +1,9 @@
+{
+  "prefix": "!",
+  "embed_color": 0x00FF9F,
+  "footer": "Cobra Systems™ Manager",
+  "auto_role": {},
+  "welcome_channel": {},
+  "log_channel": {},
+  "reaction_roles": {}
+}
