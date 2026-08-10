@@ -54,6 +54,40 @@ bot.save_config = lambda: save_config(bot.config)
 bot.embed_color = config.get("embed_color", 0x00FF9F)
 bot.footer = config.get("footer", "Cobra Systems™ Manager")
 
+_original_context_send = commands.Context.send
+
+
+async def send_with_fake_embed(self, *args, **kwargs):
+    """Show a short-lived placeholder embed before the real command response."""
+    bypass_fake = kwargs.pop("bypass_fake", False)
+    if bypass_fake:
+        return await _original_context_send(self, *args, **kwargs)
+
+    fake_embed = discord.Embed(
+        title="🐍 Cobra Systems™ Manager",
+        description="Working on it...",
+        color=0x2B2D31,
+    )
+
+    temp_message = None
+    try:
+        if getattr(self, "interaction", None) is not None and not self.interaction.response.is_done():
+            try:
+                await self.interaction.response.defer(thinking=True)
+            except discord.HTTPException:
+                pass
+
+        temp_message = await self.channel.send(embed=fake_embed)
+        await asyncio.sleep(0.35)
+        await temp_message.delete()
+    except Exception:
+        pass
+
+    return await _original_context_send(self, *args, **kwargs)
+
+
+commands.Context.send = send_with_fake_embed
+
 
 async def send_response(ctx, **kwargs):
     """Send a response that works for both prefix and hybrid command interactions."""
