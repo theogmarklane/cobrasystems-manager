@@ -10,7 +10,12 @@ WARNINGS_FILE = "data/warnings.json"
 class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.warnings = self.load_warnings()
+        # If bot.db is available, use MongoDB; otherwise fall back to JSON file
+        self.use_db = hasattr(bot, "db")
+        if not self.use_db:
+            self.warnings = self.load_warnings()
+        else:
+            self.warnings = None
 
     def load_warnings(self):
         if not os.path.exists(WARNINGS_FILE):
@@ -25,6 +30,24 @@ class Moderation(commands.Cog):
         os.makedirs("data", exist_ok=True)
         with open(WARNINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(self.warnings, f, indent=2)
+
+    # Helper: add warning to DB
+    async def _db_add_warning(self, guild_id: str, user_id: str, warn_data: dict):
+        coll = self.bot.db["warnings"]
+        await coll.update_one(
+            {"guild_id": guild_id, "user_id": user_id},
+            {"$push": {"warnings": warn_data}},
+            upsert=True
+        )
+
+    async def _db_get_warnings(self, guild_id: str, user_id: str):
+        coll = self.bot.db["warnings"]
+        doc = await coll.find_one({"guild_id": guild_id, "user_id": user_id})
+        return doc.get("warnings", []) if doc else []
+
+    async def _db_clear_warnings(self, guild_id: str, user_id: str):
+        coll = self.bot.db["warnings"]
+        await coll.delete_one({"guild_id": guild_id, "user_id": user_id})
 
     def get_embed(self, title: str, description: str = None, color=None):
         embed = discord.Embed(
@@ -165,10 +188,14 @@ class Moderation(commands.Cog):
             "moderator": str(ctx.author.id),
             "timestamp": datetime.utcnow().isoformat()
         }
-        self.warnings[guild_id][user_id].append(warn_data)
-        self.save_warnings()
-
-        count = len(self.warnings[guild_id][user_id])
+        if self.use_db:
+            await self._db_add_warning(guild_id, user_id, warn_data)
+            warns = await self._db_get_warnings(guild_id, user_id)
+            count = len(warns)
+        else:
+            self.warnings[guild_id][user_id].append(warn_data)
+            self.save_warnings()
+            count = len(self.warnings[guild_id][user_id])
         embed = self.get_embed(
             "⚠️ Member Warned",
             f"**User:** {member.mention} (`{member.id}`)\n**Moderator:** {ctx.author.mention}\n**Reason:** {reason}\n**Total Warnings:** {count}"
@@ -191,7 +218,10 @@ class Moderation(commands.Cog):
     async def warnings(self, ctx: commands.Context, member: discord.Member):
         guild_id = str(ctx.guild.id)
         user_id = str(member.id)
-        user_warns = self.warnings.get(guild_id, {}).get(user_id, [])
+        if self.use_db:
+            user_warns = await self._db_get_warnings(guild_id, user_id)
+        else:
+            user_warns = self.warnings.get(guild_id, {}).get(user_id, [])
 
         if not user_warns:
             return await ctx.send(embed=self.get_embed("📋 Warnings", f"{member.mention} has no warnings."))
@@ -213,12 +243,16 @@ class Moderation(commands.Cog):
     async def clearwarns(self, ctx: commands.Context, member: discord.Member):
         guild_id = str(ctx.guild.id)
         user_id = str(member.id)
-        if guild_id in self.warnings and user_id in self.warnings[guild_id]:
-            del self.warnings[guild_id][user_id]
-            self.save_warnings()
+        if self.use_db:
+            await self._db_clear_warnings(guild_id, user_id)
             await ctx.send(embed=self.get_embed("✅ Cleared", f"All warnings for {member.mention} have been cleared."))
         else:
-            await ctx.send(embed=self.get_embed("📋 Warnings", f"{member.mention} has no warnings."))
+            if guild_id in self.warnings and user_id in self.warnings[guild_id]:
+                del self.warnings[guild_id][user_id]
+                self.save_warnings()
+                await ctx.send(embed=self.get_embed("✅ Cleared", f"All warnings for {member.mention} have been cleared."))
+            else:
+                await ctx.send(embed=self.get_embed("📋 Warnings", f"{member.mention} has no warnings."))
 
     # ==================== PURGE ====================
     @commands.hybrid_command(name="purge", description="Delete a number of messages", aliases=["clear", "prune"])

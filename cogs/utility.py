@@ -4,11 +4,24 @@ from discord import app_commands
 from datetime import datetime
 import platform
 import time
+import os
+import json
+import uuid
+import asyncio
+
+REMINDERS_FILE = "data/reminders.json"
 
 class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.start_time = time.time()
+        self.use_db = hasattr(bot, "db")
+        self.reminders = {} if self.use_db else self.load_reminders()
+        # start background reminder loop
+        try:
+            self.bot.loop.create_task(self._reminder_loop())
+        except Exception:
+            pass
 
     def get_embed(self, title: str, description: str = None, color=None):
         embed = discord.Embed(
@@ -19,6 +32,70 @@ class Utility(commands.Cog):
         )
         embed.set_footer(text=self.bot.footer)
         return embed
+
+    def load_reminders(self):
+        if not os.path.exists(REMINDERS_FILE):
+            return {}
+        try:
+            with open(REMINDERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+
+    def save_reminders(self):
+        os.makedirs("data", exist_ok=True)
+        with open(REMINDERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.reminders, f, indent=2)
+
+    def _parse_duration(self, text: str):
+        units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+        try:
+            amount = int(text[:-1])
+            unit = text[-1].lower()
+            return amount * units[unit]
+        except Exception:
+            return None
+
+    async def _reminder_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            now = int(time.time())
+            # If using DB, pull due reminders from collection; otherwise use local store
+            if self.use_db:
+                try:
+                    coll = self.bot.db["reminders"]
+                    docs = await coll.find({"timestamp": {"$lte": now}}).to_list(length=None)
+                    for d in docs:
+                        try:
+                            user = await self.bot.fetch_user(int(d.get("user_id")))
+                            msg = d.get("message", "Reminder")
+                            embed = self.get_embed("⏰ Reminder", msg)
+                            await user.send(embed=embed)
+                        except Exception:
+                            pass
+                        # remove delivered reminder
+                        await coll.delete_one({"_id": d.get("_id")})
+                except Exception:
+                    pass
+            else:
+                changed = False
+                for user_id, items in list(self.reminders.items()):
+                    for r in list(items):
+                        if r.get("timestamp") <= now:
+                            try:
+                                user = await self.bot.fetch_user(int(user_id))
+                                msg = r.get("message", "Reminder")
+                                embed = self.get_embed("⏰ Reminder", msg)
+                                await user.send(embed=embed)
+                            except Exception:
+                                pass
+                            items.remove(r)
+                            changed = True
+                    if not items:
+                        self.reminders.pop(user_id, None)
+                if changed:
+                    self.save_reminders()
+            await asyncio.sleep(5)
 
     # ==================== HELP ====================
     @commands.hybrid_command(name="help", description="Show all available commands")
@@ -88,6 +165,90 @@ class Utility(commands.Cog):
         uptime_str = f"{days}d {hours}h {minutes}m {seconds}s"
         embed = self.get_embed("⏱️ Uptime", f"Online for **{uptime_str}**")
         await ctx.send(embed=embed)
+
+    # ==================== REMINDERS ====================
+    @commands.hybrid_command(name="remindme", description="Set a reminder for yourself (e.g. 10m, 1h, 2d)")
+    @app_commands.describe(duration="How long until the reminder (10m, 1h, 2d)", message="What to remind you about")
+    async def remindme(self, ctx: commands.Context, duration: str, *, message: str = "Reminder!"):
+        seconds = self._parse_duration(duration)
+        if seconds is None:
+            return await ctx.send(embed=self.get_embed("⚠️ Invalid Duration", "Use format like `10m`, `1h`, `2d`.", 0xFFAA00))
+        ts = int(time.time()) + seconds
+        rid = uuid.uuid4().hex[:8]
+        user_id = str(ctx.author.id)
+        if self.use_db:
+            try:
+                coll = self.bot.db["reminders"]
+                await coll.insert_one({
+                    "user_id": user_id,
+                    "id": rid,
+                    "timestamp": ts,
+                    "message": message,
+                    "created_at": int(time.time())
+                })
+            except Exception:
+                return await ctx.send(embed=self.get_embed("❌ Error", "Failed to save reminder to database.", 0xFF0000))
+        else:
+            if user_id not in self.reminders:
+                self.reminders[user_id] = []
+            self.reminders[user_id].append({
+                "id": rid,
+                "timestamp": ts,
+                "message": message,
+                "created_at": int(time.time())
+            })
+            self.save_reminders()
+        await ctx.send(embed=self.get_embed("✅ Reminder Set", f"I'll remind you in **{duration}** — ID: `{rid}`"))
+
+    @commands.hybrid_command(name="reminders", description="List your active reminders")
+    async def reminders_list(self, ctx: commands.Context):
+        user_id = str(ctx.author.id)
+        if self.use_db:
+            try:
+                coll = self.bot.db["reminders"]
+                docs = await coll.find({"user_id": user_id}).to_list(length=None)
+                items = docs
+            except Exception:
+                items = []
+        else:
+            items = self.reminders.get(user_id, [])
+        if not items:
+            return await ctx.send(embed=self.get_embed("⏳ Reminders", "You have no active reminders."))
+        desc = ""
+        for r in items:
+            remain = r.get("timestamp") - int(time.time())
+            if remain < 0:
+                remain = 0
+            m, s = divmod(remain, 60)
+            h, m = divmod(m, 60)
+            d, h = divmod(h, 24)
+            timestr = f"{d}d {h}h {m}m {s}s"
+            desc += f"• `{r['id']}` in **{timestr}** — {r.get('message')}\n"
+        await ctx.send(embed=self.get_embed("⏳ Your Reminders", desc))
+
+    @commands.hybrid_command(name="cancelreminder", description="Cancel a reminder by ID")
+    async def cancelreminder(self, ctx: commands.Context, reminder_id: str):
+        user_id = str(ctx.author.id)
+        if self.use_db:
+            try:
+                coll = self.bot.db["reminders"]
+                res = await coll.delete_one({"user_id": user_id, "id": reminder_id})
+                if res.deleted_count:
+                    return await ctx.send(embed=self.get_embed("✅ Cancelled", f"Cancelled reminder `{reminder_id}`."))
+                else:
+                    return await ctx.send(embed=self.get_embed("❌ Not Found", "No reminder found with that ID.", 0xFF0000))
+            except Exception:
+                return await ctx.send(embed=self.get_embed("❌ Error", "Failed to cancel reminder.", 0xFF0000))
+        else:
+            items = self.reminders.get(user_id, [])
+            for r in list(items):
+                if r.get("id") == reminder_id:
+                    items.remove(r)
+                    if not items:
+                        self.reminders.pop(user_id, None)
+                    self.save_reminders()
+                    return await ctx.send(embed=self.get_embed("✅ Cancelled", f"Cancelled reminder `{reminder_id}`."))
+            await ctx.send(embed=self.get_embed("❌ Not Found", "No reminder found with that ID.", 0xFF0000))
 
     # ==================== USERINFO ====================
     @commands.hybrid_command(name="userinfo", description="Get information about a user", aliases=["ui", "whois"])
