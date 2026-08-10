@@ -54,6 +54,23 @@ bot.save_config = lambda: save_config(bot.config)
 bot.embed_color = config.get("embed_color", 0x00FF9F)
 bot.footer = config.get("footer", "Cobra Systems™ Manager")
 
+
+async def send_response(ctx, **kwargs):
+    """Send a response that works for both prefix and hybrid command interactions."""
+    interaction = getattr(ctx, "interaction", None)
+
+    if interaction is None:
+        return await ctx.send(**kwargs)
+
+    try:
+        if interaction.response.is_done():
+            return await interaction.followup.send(**kwargs)
+        return await interaction.response.send_message(**kwargs)
+    except (discord.NotFound, discord.HTTPException):
+        fallback_kwargs = dict(kwargs)
+        fallback_kwargs.pop("ephemeral", None)
+        return await ctx.channel.send(**fallback_kwargs)
+
 async def load_cogs():
     cogs = [
         "cogs.events",
@@ -146,7 +163,7 @@ async def on_command_error(ctx, error):
             description="You don't have the required permissions to use this command.",
             color=0xFF0000
         )
-        await ctx.send(embed=embed, ephemeral=True if hasattr(ctx, "interaction") and ctx.interaction else False)
+        await send_response(ctx, embed=embed, ephemeral=True if getattr(ctx, "interaction", None) else False)
         return
     if isinstance(error, commands.BotMissingPermissions):
         embed = discord.Embed(
@@ -154,7 +171,7 @@ async def on_command_error(ctx, error):
             description="I don't have the required permissions to do that.",
             color=0xFF0000
         )
-        await ctx.send(embed=embed)
+        await send_response(ctx, embed=embed)
         return
     if isinstance(error, commands.MissingRequiredArgument):
         embed = discord.Embed(
@@ -162,7 +179,7 @@ async def on_command_error(ctx, error):
             description=f"Missing required argument: `{error.param.name}`",
             color=0xFFAA00
         )
-        await ctx.send(embed=embed)
+        await send_response(ctx, embed=embed)
         return
     # Generic
     print(f"Error in {ctx.command}: {error}")
@@ -171,7 +188,7 @@ async def on_command_error(ctx, error):
         description=str(error),
         color=0xFF0000
     )
-    await ctx.send(embed=embed)
+    await send_response(ctx, embed=embed)
 
 if __name__ == "__main__":
     if not TOKEN:

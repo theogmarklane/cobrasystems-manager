@@ -263,6 +263,16 @@ class Moderation(commands.Cog):
         if amount < 1 or amount > 100:
             return await ctx.send(embed=self.get_embed("⚠️ Invalid Amount", "Please provide a number between 1 and 100.", 0xFFAA00))
 
+        if ctx.interaction is not None and not ctx.interaction.response.is_done():
+            await ctx.send(
+                embed=self.get_embed(
+                    "🧹 Purging Messages",
+                    f"Deleting up to **{amount}** message(s)...",
+                    0xFFAA00,
+                ),
+                ephemeral=True,
+            )
+
         def check(msg):
             if member:
                 return msg.author.id == member.id
@@ -277,7 +287,7 @@ class Moderation(commands.Cog):
 
         deleted = await ctx.channel.purge(limit=amount, check=check)
         embed = self.get_embed("🧹 Purged", f"Deleted **{len(deleted)}** message(s).")
-        msg = await ctx.send(embed=embed)
+        msg = await ctx.channel.send(embed=embed)
         await msg.delete(delay=3)
 
     # ==================== LOCK / UNLOCK ====================
