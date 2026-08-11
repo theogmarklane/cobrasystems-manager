@@ -3,6 +3,7 @@ import asyncio
 import discord
 from discord.ext import commands
 import xml.etree.ElementTree as ET
+import re
 
 
 class YTNotifications(commands.Cog):
@@ -89,11 +90,36 @@ class YTNotifications(commands.Cog):
         """Subscribe this server to a YouTube channel's uploads. channel_identifier may be a channel ID or full channel URL.
         Example: /ytsub UC_xxx #youtube"""
         cid = channel_identifier.strip()
-        if "youtube.com/channel/" in cid:
-            cid = cid.split("youtube.com/channel/")[-1].split("?")[0].strip().strip('/')
+
+        # If a full URL/handle/custom name was provided, try to resolve it to a UC channel id
+        if not cid.startswith("UC"):
+            # handle common URL forms and plain handles
+            # Examples: https://www.youtube.com/@RinOmega, https://www.youtube.com/channel/UC..., https://youtube.com/c/Name
+            if "youtube.com" in cid or "youtu.be" in cid or cid.startswith("@"):
+                # normalize if just a handle like @RinOmega
+                if cid.startswith("@"):
+                    test_url = f"https://www.youtube.com/{cid}"
+                else:
+                    test_url = cid
+
+                try:
+                    async with self.session.get(test_url, timeout=20) as resp:
+                        if resp.status == 200:
+                            text = await resp.text()
+                            # Try to find channelId in page HTML or JSON
+                            m = re.search(r'"channelId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"', text)
+                            if not m:
+                                m = re.search(r'"externalId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"', text)
+                            if not m:
+                                # sometimes the HTML contains /channel/UC... as a canonical link
+                                m = re.search(r"/channel/(UC[0-9A-Za-z_-]{20,})", text)
+                            if m:
+                                cid = m.group(1)
+                except Exception:
+                    pass
 
         if not cid.startswith("UC"):
-            await ctx.send("Please provide a channel ID (starts with UC) or a full channel URL.")
+            await ctx.send("Please provide a channel ID (starts with UC) or a full channel URL/handle that can be resolved.")
             return
 
         notify_channel = notify_channel or ctx.channel
