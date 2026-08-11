@@ -214,12 +214,23 @@ async def on_ready():
 ║   Servers: {len(bot.guilds)}                 
 ╚══════════════════════════════════════════════╝
     """)
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="your server 🐍 | /help"
-        )
-    )
+    # Set presence status without a visible activity. Use config key "status" or env BOT_STATUS.
+    status_str = bot.config.get("status", os.getenv("BOT_STATUS", "dnd")).lower()
+    status_map = {
+        "online": discord.Status.online,
+        "idle": discord.Status.idle,
+        "dnd": discord.Status.dnd,
+        "invisible": discord.Status.invisible,
+    }
+    status = status_map.get(status_str, discord.Status.dnd)
+    try:
+        await bot.change_presence(status=status)
+    except Exception:
+        # Fallback: set to dnd if anything goes wrong
+        try:
+            await bot.change_presence(status=discord.Status.dnd)
+        except Exception:
+            pass
 
 @bot.event
 async def on_command_error(ctx, error):
