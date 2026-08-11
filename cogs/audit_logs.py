@@ -357,7 +357,24 @@ class AuditLogs(commands.Cog):
         guild = self.bot.get_guild(payload.guild_id) if payload.guild_id else None
         if not guild:
             return
-
+        cached = payload.cached_message
+        if cached:
+            before = cached
+            after = cached
+            data = payload.data
+            # Build a lightweight after-message-like object using cached content where possible
+            content = data.get("content", cached.content)
+            if content == cached.content:
+                return
+            embed = self.get_embed(
+                "✏️ Message Edited",
+                f"**Author:** {self._author_text(cached.author)}\n**Channel:** <#{cached.channel.id}>\n**Message ID:** `{cached.id}`"
+            )
+            embed.add_field(name="Before", value=f"```\n{self._truncate(cached.content, 900)}\n```", inline=False)
+            embed.add_field(name="After", value=f"```\n{self._truncate(content, 900)}\n```", inline=False)
+            embed.set_footer(text=f"Raw edit event • {self.bot.footer}")
+            await self._send_log(guild, embed)
+            return
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         # Log new messages (only in guilds, ignore bots)
@@ -381,24 +398,6 @@ class AuditLogs(commands.Cog):
                 inline=False,
             )
         await self._send_log(message.guild, embed)
-        cached = payload.cached_message
-        if cached:
-            before = cached
-            after = cached
-            data = payload.data
-            # Build a lightweight after-message-like object using cached content where possible
-            content = data.get("content", cached.content)
-            if content == cached.content:
-                return
-            embed = self.get_embed(
-                "✏️ Message Edited",
-                f"**Author:** {self._author_text(cached.author)}\n**Channel:** <#{cached.channel.id}>\n**Message ID:** `{cached.id}`"
-            )
-            embed.add_field(name="Before", value=f"```\n{self._truncate(cached.content, 900)}\n```", inline=False)
-            embed.add_field(name="After", value=f"```\n{self._truncate(content, 900)}\n```", inline=False)
-            embed.set_footer(text=f"Raw edit event • {self.bot.footer}")
-            await self._send_log(guild, embed)
-            return
 
     # ==================== REACTIONS ====================
     @commands.Cog.listener()
