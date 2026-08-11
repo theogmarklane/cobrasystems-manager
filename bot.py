@@ -140,7 +140,7 @@ async def load_cogs():
     cogs = [
         "cogs.events",
         "cogs.moderation",
-        "cogs.tickets",
+            "cogs.audit_logs",
         "cogs.roles",
         "cogs.utility",
         "cogs.admin",

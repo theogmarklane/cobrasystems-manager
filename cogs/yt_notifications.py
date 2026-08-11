@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 import xml.etree.ElementTree as ET
 import re
+from datetime import datetime, timezone
 
 
 class YTNotifications(commands.Cog):
@@ -49,10 +50,14 @@ class YTNotifications(commands.Cog):
                 self.bot.save_config()
             guild_id = int(sub.get("guild_id"))
             notify_channel_id = int(sub.get("notify_channel"))
+            notify_role_id = sub.get("notify_role")
             # Prefer API if key is available
             vid = None
             title_text = None
             thumbnail = None
+            channel_title = None
+            published_at = None
+            description = None
             if self.api_key:
                 try:
                     latest = await self.get_latest_video_via_api(channel_id)
@@ -60,6 +65,9 @@ class YTNotifications(commands.Cog):
                         vid = latest.get("videoId")
                         title_text = latest.get("title")
                         thumbnail = latest.get("thumbnail")
+                        channel_title = latest.get("channelTitle")
+                        published_at = latest.get("publishedAt")
+                        description = latest.get("description")
                 except Exception:
                     vid = None
 
@@ -103,12 +111,35 @@ class YTNotifications(commands.Cog):
             if not channel:
                 continue
             video_url = f"https://www.youtube.com/watch?v={vid}"
-            embed = discord.Embed(title=title_text or video_url, url=video_url, color=self.bot.embed_color)
+            embed = discord.Embed(
+                title=title_text or "New YouTube Upload",
+                url=video_url,
+                color=self.bot.embed_color,
+            )
+            embed.description = description[:4000] if description else None
+            embed.add_field(name="Channel", value=channel_title or f"`{channel_id}`", inline=True)
+            embed.add_field(name="Video ID", value=f"`{vid}`", inline=True)
+            embed.add_field(name="Video Link", value=f"[Watch here]({video_url})", inline=True)
+            if published_at:
+                try:
+                    dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+                    embed.add_field(name="Published", value=f"<t:{int(dt.timestamp())}:F>", inline=True)
+                    embed.add_field(name="Age", value=f"<t:{int(dt.timestamp())}:R>", inline=True)
+                except Exception:
+                    pass
             if thumbnail:
                 embed.set_thumbnail(url=thumbnail)
-            embed.set_footer(text="New YouTube upload")
+            embed.set_author(name=channel_title or "YouTube Upload", icon_url="https://www.youtube.com/s/desktop/9f83f27e/img/favicon_144x144.png")
+            embed.set_footer(text=f"New YouTube upload • Channel ID: {channel_id}")
+            content = None
+            allowed_mentions = discord.AllowedMentions(everyone=False, users=False, roles=bool(notify_role_id))
+            if notify_role_id:
+                guild = self.bot.get_guild(guild_id)
+                role = guild.get_role(int(notify_role_id)) if guild else None
+                if role:
+                    content = role.mention
             try:
-                await channel.send(embed=embed)
+                await channel.send(content=content, embed=embed, allowed_mentions=allowed_mentions)
             except Exception:
                 pass
 
@@ -208,21 +239,31 @@ class YTNotifications(commands.Cog):
                 resource = snip.get("resourceId", {})
                 vid = resource.get("videoId")
                 title = snip.get("title")
+                desc = snip.get("description")
+                channel_title = snip.get("channelTitle")
+                published_at = snip.get("publishedAt")
                 thumbs = snip.get("thumbnails", {})
                 thumb = None
                 for key in ("maxres", "high", "medium", "default"):
                     if thumbs.get(key) and thumbs[key].get("url"):
                         thumb = thumbs[key]["url"]
                         break
-                return {"videoId": vid, "title": title, "thumbnail": thumb}
+                return {
+                    "videoId": vid,
+                    "title": title,
+                    "description": desc,
+                    "channelTitle": channel_title,
+                    "publishedAt": published_at,
+                    "thumbnail": thumb,
+                }
         except Exception:
             return None
 
     @commands.command(name="ytsub")
     @commands.has_permissions(manage_guild=True)
-    async def ytsub(self, ctx, channel_identifier: str, notify_channel: discord.TextChannel = None):
+    async def ytsub(self, ctx, channel_identifier: str, notify_channel: discord.TextChannel = None, notify_role: discord.Role = None):
         """Subscribe this server to a YouTube channel's uploads. channel_identifier may be a channel ID or full channel URL.
-        Example: /ytsub UC_xxx #youtube"""
+        Example: !ytsub UC_xxx #youtube @Updates"""
         cid_raw = channel_identifier.strip()
 
         resolved = None
@@ -255,9 +296,15 @@ class YTNotifications(commands.Cog):
 
         notify_channel = notify_channel or ctx.channel
         subs = self.bot.config.setdefault("youtube_subscriptions", [])
-        subs.append({"channel_id": resolved, "guild_id": str(ctx.guild.id), "notify_channel": notify_channel.id})
+        subs.append({
+            "channel_id": resolved,
+            "guild_id": str(ctx.guild.id),
+            "notify_channel": notify_channel.id,
+            "notify_role": notify_role.id if notify_role else None,
+        })
         self.bot.save_config()
-        await ctx.send(f"Subscribed to uploads from `{resolved}` and will notify in {notify_channel.mention}.")
+        role_text = f" and ping {notify_role.mention}" if notify_role else ""
+        await ctx.send(f"Subscribed to uploads from `{resolved}` and will notify in {notify_channel.mention}{role_text}.")
 
     @commands.command(name="ytunsub")
     @commands.has_permissions(manage_guild=True)

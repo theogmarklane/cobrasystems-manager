@@ -53,50 +53,7 @@ class Events(commands.Cog):
                 except discord.Forbidden:
                     pass
 
-        # Log
-        await self.log_action(
-            guild,
-            f"Member Joined",
-            f"{member.mention} (`{member.id}`)\nAccount created: <t:{int(member.created_at.timestamp())}:R>"
-        )
-
-    @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member):
-        await self.log_action(
-            member.guild,
-            "Member Left",
-            f"{member} (`{member.id}`)"
-        )
-
-    @commands.Cog.listener()
-    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
-        await self.log_action(
-            guild,
-            "Member Banned",
-            f"{user} (`{user.id}`)"
-        )
-
-    @commands.Cog.listener()
-    async def on_member_unban(self, guild: discord.Guild, user: discord.User):
-        await self.log_action(
-            guild,
-            "Member Unbanned",
-            f"{user} (`{user.id}`)"
-        )
-
-    async def log_action(self, guild: discord.Guild, title: str, description: str):
-        log_channels = self.bot.config.get("log_channel", {})
-        channel_id = log_channels.get(str(guild.id))
-        if not channel_id:
-            return
-        channel = guild.get_channel(channel_id)
-        if not channel:
-            return
-        embed = self.get_embed(title=title, description=description, color=0x5865F2)
-        try:
-            await channel.send(embed=embed)
-        except discord.Forbidden:
-            pass
+        # Member join logging is handled in the dedicated audit logging cog.
 
 async def setup(bot):
     await bot.add_cog(Events(bot))
