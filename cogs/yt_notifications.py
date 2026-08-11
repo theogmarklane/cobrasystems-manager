@@ -1,3 +1,4 @@
+import os
 import aiohttp
 import asyncio
 import discord
@@ -13,6 +14,7 @@ class YTNotifications(commands.Cog):
         self.bot = bot
         self.session = aiohttp.ClientSession()
         self.task = bot.loop.create_task(self.loop_poll())
+        self.api_key = os.getenv("YT_API_KEY")
 
     def cog_unload(self):
         try:
@@ -38,95 +40,224 @@ class YTNotifications(commands.Cog):
         # subs: list of dicts {"channel_id": "UCxxx", "guild_id": "123", "notify_channel": 456}
         for sub in list(subs):
             channel_id = sub.get("channel_id")
+            # resolve if not a UC id
+            if channel_id and not channel_id.startswith("UC"):
+                channel_id = await self.resolve_channel_id(channel_id)
+                if not channel_id:
+                    continue
+                sub["channel_id"] = channel_id
+                self.bot.save_config()
             guild_id = int(sub.get("guild_id"))
             notify_channel_id = int(sub.get("notify_channel"))
-            feed_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            try:
-                async with self.session.get(feed_url, timeout=20) as resp:
-                    if resp.status != 200:
-                        continue
-                    text = await resp.text()
-                    root = ET.fromstring(text)
-                    # namespace handling
-                    ns = {k: v for k, v in [part.split('=') for part in [n for n in root.tag[root.tag.find('{')+1:root.tag.find('}')].split()]]} if False else {}
-                    # simple parse: find first entry
-                    entry = root.find('{http://www.w3.org/2005/Atom}entry')
-                    if entry is None:
-                        continue
-                    video_id = entry.find('{http://www.youtube.com/xml/schemas/2015}videoId')
-                    title = entry.find('{http://www.w3.org/2005/Atom}title')
-                    link = entry.find('{http://www.w3.org/2005/Atom}link')
-                    media_thumbnail = entry.find('{http://search.yahoo.com/mrss/}group/{http://search.yahoo.com/mrss/}thumbnail')
-                    if video_id is None or title is None:
-                        continue
-                    vid = video_id.text
-                    last_seen = self.bot.config.setdefault("yt_last", {}).get(channel_id)
-                    if last_seen == vid:
-                        continue
-                    # new video
-                    self.bot.config.setdefault("yt_last", {})[channel_id] = vid
-                    self.bot.save_config()
-                    guild = self.bot.get_guild(guild_id)
-                    if not guild:
-                        continue
-                    channel = guild.get_channel(notify_channel_id)
-                    if not channel:
-                        continue
-                    video_url = f"https://www.youtube.com/watch?v={vid}"
-                    embed = discord.Embed(title=title.text, url=video_url, color=self.bot.embed_color)
-                    if media_thumbnail is not None and 'url' in media_thumbnail.attrib:
-                        embed.set_thumbnail(url=media_thumbnail.attrib['url'])
-                    embed.set_footer(text="New YouTube upload")
-                    try:
-                        await channel.send(embed=embed)
-                    except Exception:
-                        pass
-            except Exception:
+            # Prefer API if key is available
+            vid = None
+            title_text = None
+            thumbnail = None
+            if self.api_key:
+                try:
+                    latest = await self.get_latest_video_via_api(channel_id)
+                    if latest:
+                        vid = latest.get("videoId")
+                        title_text = latest.get("title")
+                        thumbnail = latest.get("thumbnail")
+                except Exception:
+                    vid = None
+
+            # Fallback to RSS feed if API not available or failed
+            if not vid:
+                feed_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+                try:
+                    async with self.session.get(feed_url, timeout=20) as resp:
+                        if resp.status == 200:
+                            text = await resp.text()
+                            root = ET.fromstring(text)
+                            entry = root.find('{http://www.w3.org/2005/Atom}entry')
+                            if entry is None:
+                                continue
+                            video_id = entry.find('{http://www.youtube.com/xml/schemas/2015}videoId')
+                            title = entry.find('{http://www.w3.org/2005/Atom}title')
+                            media_thumbnail = entry.find('{http://search.yahoo.com/mrss/}group/{http://search.yahoo.com/mrss/}thumbnail')
+                            if video_id is None or title is None:
+                                continue
+                            vid = video_id.text
+                            title_text = title.text
+                            if media_thumbnail is not None and 'url' in media_thumbnail.attrib:
+                                thumbnail = media_thumbnail.attrib['url']
+                except Exception:
+                    continue
+
+            if not vid:
                 continue
+
+            last_seen = self.bot.config.setdefault("yt_last", {}).get(channel_id)
+            if last_seen == vid:
+                continue
+
+            # new video
+            self.bot.config.setdefault("yt_last", {})[channel_id] = vid
+            self.bot.save_config()
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+            channel = guild.get_channel(notify_channel_id)
+            if not channel:
+                continue
+            video_url = f"https://www.youtube.com/watch?v={vid}"
+            embed = discord.Embed(title=title_text or video_url, url=video_url, color=self.bot.embed_color)
+            if thumbnail:
+                embed.set_thumbnail(url=thumbnail)
+            embed.set_footer(text="New YouTube upload")
+            try:
+                await channel.send(embed=embed)
+            except Exception:
+                pass
+
+    async def resolve_channel_id(self, identifier: str) -> str | None:
+        """Resolve various YouTube identifiers (handles, URLs, usernames) to a UC channel id.
+        Returns UC... or None."""
+        ident = identifier.strip()
+        # direct UC id
+        if ident.startswith("UC"):
+            return ident
+
+        # If a URL contains /channel/UC..., extract it
+        m = re.search(r"/channel/(UC[0-9A-Za-z_-]{20,})", ident)
+        if m:
+            return m.group(1)
+
+        # If it's a full URL or handle starting with @, try using the Data API if available
+        if self.api_key:
+            # Normalize handle: remove leading @ for query
+            q = ident.lstrip("@")
+            params = {
+                "part": "snippet",
+                "type": "channel",
+                "q": q,
+                "maxResults": 1,
+                "key": self.api_key,
+            }
+            url = "https://www.googleapis.com/youtube/v3/search"
+            try:
+                async with self.session.get(url, params=params, timeout=20) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
+                    items = data.get("items") or []
+                    if not items:
+                        return None
+                    # channel id may be in snippet.channelId or id.channelId
+                    item = items[0]
+                    cid = None
+                    if item.get("snippet") and item["snippet"].get("channelId"):
+                        cid = item["snippet"]["channelId"]
+                    elif item.get("id") and item["id"].get("channelId"):
+                        cid = item["id"]["channelId"]
+                    return cid
+            except Exception:
+                return None
+
+        # Fallback: try to scrape the page HTML
+        try:
+            test_url = ident if "youtube.com" in ident else f"https://www.youtube.com/{ident.lstrip('@')}"
+            async with self.session.get(test_url, timeout=20) as resp:
+                if resp.status != 200:
+                    return None
+                text = await resp.text()
+                m = re.search(r'"channelId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"', text)
+                if not m:
+                    m = re.search(r'"externalId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"', text)
+                if not m:
+                    m = re.search(r"/channel/(UC[0-9A-Za-z_-]{20,})", text)
+                if m:
+                    return m.group(1)
+        except Exception:
+            return None
+
+        return None
+
+    async def get_latest_video_via_api(self, channel_id: str) -> dict | None:
+        """Return a dict with videoId, title, thumbnail for the latest upload using YouTube Data API."""
+        if not self.api_key:
+            return None
+        # Get uploads playlist id
+        url = "https://www.googleapis.com/youtube/v3/channels"
+        params = {"part": "contentDetails", "id": channel_id, "key": self.api_key}
+        try:
+            async with self.session.get(url, params=params, timeout=20) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                items = data.get("items") or []
+                if not items:
+                    return None
+                uploads = items[0].get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads")
+                if not uploads:
+                    return None
+
+            # fetch most recent playlist item
+            url2 = "https://www.googleapis.com/youtube/v3/playlistItems"
+            params2 = {"part": "snippet", "playlistId": uploads, "maxResults": 1, "key": self.api_key}
+            async with self.session.get(url2, params=params2, timeout=20) as resp2:
+                if resp2.status != 200:
+                    return None
+                data2 = await resp2.json()
+                items2 = data2.get("items") or []
+                if not items2:
+                    return None
+                snip = items2[0].get("snippet", {})
+                resource = snip.get("resourceId", {})
+                vid = resource.get("videoId")
+                title = snip.get("title")
+                thumbs = snip.get("thumbnails", {})
+                thumb = None
+                for key in ("maxres", "high", "medium", "default"):
+                    if thumbs.get(key) and thumbs[key].get("url"):
+                        thumb = thumbs[key]["url"]
+                        break
+                return {"videoId": vid, "title": title, "thumbnail": thumb}
+        except Exception:
+            return None
 
     @commands.command(name="ytsub")
     @commands.has_permissions(manage_guild=True)
     async def ytsub(self, ctx, channel_identifier: str, notify_channel: discord.TextChannel = None):
         """Subscribe this server to a YouTube channel's uploads. channel_identifier may be a channel ID or full channel URL.
         Example: /ytsub UC_xxx #youtube"""
-        cid = channel_identifier.strip()
+        cid_raw = channel_identifier.strip()
 
-        # If a full URL/handle/custom name was provided, try to resolve it to a UC channel id
-        if not cid.startswith("UC"):
-            # handle common URL forms and plain handles
-            # Examples: https://www.youtube.com/@RinOmega, https://www.youtube.com/channel/UC..., https://youtube.com/c/Name
-            if "youtube.com" in cid or "youtu.be" in cid or cid.startswith("@"):
-                # normalize if just a handle like @RinOmega
-                if cid.startswith("@"):
-                    test_url = f"https://www.youtube.com/{cid}"
-                else:
-                    test_url = cid
-
+        resolved = None
+        if cid_raw.startswith("UC"):
+            resolved = cid_raw
+        else:
+            # Try API resolution first when available
+            if self.api_key:
+                resolved = await self.resolve_channel_id(cid_raw)
+            # Fallback to scraping
+            if not resolved:
+                test_url = cid_raw if ("youtube.com" in cid_raw or "youtu.be" in cid_raw) else f"https://www.youtube.com/{cid_raw.lstrip('@')}"
                 try:
                     async with self.session.get(test_url, timeout=20) as resp:
                         if resp.status == 200:
                             text = await resp.text()
-                            # Try to find channelId in page HTML or JSON
                             m = re.search(r'"channelId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"', text)
                             if not m:
                                 m = re.search(r'"externalId"\s*:\s*"(UC[0-9A-Za-z_-]{20,})"', text)
                             if not m:
-                                # sometimes the HTML contains /channel/UC... as a canonical link
                                 m = re.search(r"/channel/(UC[0-9A-Za-z_-]{20,})", text)
                             if m:
-                                cid = m.group(1)
+                                resolved = m.group(1)
                 except Exception:
-                    pass
+                    resolved = None
 
-        if not cid.startswith("UC"):
+        if not resolved or not resolved.startswith("UC"):
             await ctx.send("Please provide a channel ID (starts with UC) or a full channel URL/handle that can be resolved.")
             return
 
         notify_channel = notify_channel or ctx.channel
         subs = self.bot.config.setdefault("youtube_subscriptions", [])
-        subs.append({"channel_id": cid, "guild_id": str(ctx.guild.id), "notify_channel": notify_channel.id})
+        subs.append({"channel_id": resolved, "guild_id": str(ctx.guild.id), "notify_channel": notify_channel.id})
         self.bot.save_config()
-        await ctx.send(f"Subscribed to uploads from `{cid}` and will notify in {notify_channel.mention}.")
+        await ctx.send(f"Subscribed to uploads from `{resolved}` and will notify in {notify_channel.mention}.")
 
     @commands.command(name="ytunsub")
     @commands.has_permissions(manage_guild=True)
