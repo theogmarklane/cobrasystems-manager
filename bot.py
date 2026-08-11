@@ -3,7 +3,9 @@ from discord.ext import commands
 import os
 import json
 import asyncio
+import logging
 from dotenv import load_dotenv
+from keep_alive import start_background
 
 load_dotenv()
 
@@ -21,6 +23,35 @@ def save_config(data):
         json.dump(data, f, indent=2)
 
 config = load_config()
+
+# Install a safe logging formatter/handler to avoid formatting crashes from library logs
+class _SafeFormatter(logging.Formatter):
+    def format(self, record):
+        try:
+            return super().format(record)
+        except Exception:
+            # Best-effort fallback to avoid crashing logging in background threads
+            try:
+                message = record.getMessage()
+            except Exception:
+                message = str(record.msg)
+            time = self.formatTime(record, self.datefmt) if hasattr(self, 'formatTime') else ''
+            return f"{time} {record.levelname}: {message}"
+
+root_logger = logging.getLogger()
+# Ensure all handlers use the safe formatter to avoid formatting crashes; add a stream handler if none exist
+safe_fmt = _SafeFormatter("%(asctime)s %(levelname)s: %(message)s")
+if root_logger.handlers:
+    for h in list(root_logger.handlers):
+        try:
+            h.setFormatter(safe_fmt)
+        except Exception:
+            pass
+else:
+    handler = logging.StreamHandler()
+    handler.setFormatter(safe_fmt)
+    root_logger.addHandler(handler)
+root_logger.setLevel(logging.INFO)
 
 intents = discord.Intents.default()
 intents.members = True
@@ -123,6 +154,8 @@ async def load_cogs():
         "cogs.backup",
         "cogs.stats",
         "cogs.fun",
+        "cogs.honeypot",
+        "cogs.yt_notifications",
     ]
     for cog in cogs:
         try:
@@ -229,4 +262,11 @@ if __name__ == "__main__":
     if not TOKEN:
         print("❌ No DISCORD_TOKEN found in .env file!")
     else:
+        # Start simple keep-alive webserver so hosting providers don't put the process to sleep
+        try:
+            port = int(os.getenv("PORT", "8080"))
+            start_background(port=port)
+            print(f"✅ Keep-alive server started on port {port}")
+        except Exception:
+            pass
         bot.run(TOKEN)
