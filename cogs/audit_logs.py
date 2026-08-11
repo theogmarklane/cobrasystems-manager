@@ -382,15 +382,16 @@ class AuditLogs(commands.Cog):
             return
         content = getattr(message, "content", None)
         attachments = getattr(message, "attachments", []) or []
-        embed = self.get_embed(
-            "💬 Message Sent",
-            f"**Author:** {self._author_text(getattr(message, 'author', None))}\n"
-            f"**Channel:** {getattr(message.channel, 'mention', f'<#{message.channel.id}>')}\n"
-            f"**Message ID:** `{message.id}`\n\n"
-            f"**Content:**\n```
-{self._truncate(content, 800)}
-```"
-        )
+        channel_mention = getattr(message.channel, 'mention', f'<#{message.channel.id}>')
+        desc_lines = []
+        desc_lines.append(f"**Author:** {self._author_text(getattr(message, 'author', None))}")
+        desc_lines.append(f"**Channel:** {channel_mention}")
+        desc_lines.append(f"**Message ID:** `{message.id}`")
+        desc_lines.append("")
+        desc_lines.append("**Content:**")
+        desc_lines.append("```\n" + self._truncate(content, 800) + "\n```")
+        description = "\n".join(desc_lines)
+        embed = self.get_embed("💬 Message Sent", description)
         if attachments:
             embed.add_field(
                 name="Attachments",
