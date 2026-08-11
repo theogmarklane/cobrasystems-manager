@@ -357,6 +357,30 @@ class AuditLogs(commands.Cog):
         guild = self.bot.get_guild(payload.guild_id) if payload.guild_id else None
         if not guild:
             return
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        # Log new messages (only in guilds, ignore bots)
+        if not message.guild or message.author.bot:
+            return
+        content = getattr(message, "content", None)
+        attachments = getattr(message, "attachments", []) or []
+        embed = self.get_embed(
+            "💬 Message Sent",
+            f"**Author:** {self._author_text(getattr(message, 'author', None))}\n"
+            f"**Channel:** {getattr(message.channel, 'mention', f'<#{message.channel.id}>')}\n"
+            f"**Message ID:** `{message.id}`\n\n"
+            f"**Content:**\n```
+{self._truncate(content, 800)}
+```"
+        )
+        if attachments:
+            embed.add_field(
+                name="Attachments",
+                value="\n".join(a.url for a in attachments[:5]),
+                inline=False,
+            )
+        await self._send_log(message.guild, embed)
         cached = payload.cached_message
         if cached:
             before = cached
