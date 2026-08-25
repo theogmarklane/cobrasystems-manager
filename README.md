@@ -56,6 +56,28 @@ Or generate one in the Developer Portal → OAuth2 → URL Generator
 
 ### 3. Install & Run
 
+#### Option A: Docker (easiest)
+
+```bash
+# Create your env file first
+cp .env.example .env
+
+# Build and run in one command
+docker compose up -d --build
+```
+
+To view logs:
+```bash
+docker compose logs -f
+```
+
+To stop:
+```bash
+docker compose down
+```
+
+#### Option B: Local Python
+
 ```bash
 # Clone / download the bot folder
 cd cobra_systems_manager
@@ -78,6 +100,15 @@ Then start the bot:
 ```bash
 python bot.py
 ```
+
+---
+
+## Docker Files Included
+
+- `Dockerfile` — Container image for the bot
+- `docker-compose.yml` — One-command run setup
+- `.dockerignore` — Smaller/faster Docker builds
+- `.env.example` — Environment variable template
 
 ---
 

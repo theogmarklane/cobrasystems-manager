@@ -1,0 +1,12 @@
+services:
+  cobra-manager:
+    build: .
+    container_name: cobra-manager
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./config.json:/app/config.json
