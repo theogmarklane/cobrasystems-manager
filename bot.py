@@ -159,6 +159,9 @@ async def load_cogs():
         "cogs.yt_notifications",
     ]
     for cog in cogs:
+        if cog in bot.extensions:
+            print(f"↪️ Skipped already loaded {cog}")
+            continue
         try:
             await bot.load_extension(cog)
             print(f"✅ Loaded {cog}")
@@ -167,6 +170,13 @@ async def load_cogs():
 
 @bot.event
 async def setup_hook():
+    # discord.py normally calls setup_hook once, but keeping this idempotent
+    # prevents duplicate cogs/commands if startup is triggered more than once.
+    if getattr(bot, "_setup_complete", False):
+        print("↪️ setup_hook already completed; skipping duplicate startup")
+        return
+    bot._setup_complete = True
+
     # If MongoDB is available, attempt to load global config from DB
     if hasattr(bot, "db"):
         try:
