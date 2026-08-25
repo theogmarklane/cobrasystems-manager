@@ -94,7 +94,14 @@ Your `.env` should look like:
 ```env
 DISCORD_TOKEN=MTIz...your_token_here
 OWNER_ID=123456789012345678
+# Optional: instant slash-command registration in one development server
+DISCORD_GUILD_ID=123456789012345678
 ```
+
+The Docker image loads every cog before registering commands. Set
+`DISCORD_GUILD_ID` in `.env` to preload all slash commands immediately in a
+server; without it, commands are registered globally and Discord can take up
+to an hour to display updates.
 
 Then start the bot:
 ```bash

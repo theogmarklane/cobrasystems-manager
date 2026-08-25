@@ -155,6 +155,7 @@ async def load_cogs():
         "cogs.stats",
         "cogs.fun",
         "cogs.honeypot",
+        "cogs.tickets",
         "cogs.yt_notifications",
     ]
     for cog in cogs:
@@ -197,10 +198,18 @@ async def setup_hook():
     bot.save_config = save_config_generic
 
     await load_cogs()
-    # Sync slash commands
+    # Register every loaded hybrid command. Guild sync is immediate and is
+    # useful in Docker/development; global sync is kept for all other servers.
     try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash command(s)")
+        guild_id = os.getenv("DISCORD_GUILD_ID")
+        if guild_id:
+            guild = discord.Object(id=int(guild_id))
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            print(f"✅ Preloaded {len(synced)} slash command(s) to guild {guild_id}")
+        else:
+            synced = await bot.tree.sync()
+            print(f"✅ Synced {len(synced)} global slash command(s)")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 

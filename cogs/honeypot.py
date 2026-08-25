@@ -14,7 +14,7 @@ class Honeypot(commands.Cog):
         honeypots = self.bot.config.get("honeypot_channel", {})
         return honeypots.get(guild_id)
 
-    @commands.command(name="sethoneypot")
+    @commands.hybrid_command(name="sethoneypot", description="Set or clear this server's honeypot channel")
     @commands.has_permissions(administrator=True)
     async def set_honeypot(self, ctx, channel: discord.TextChannel = None):
         """Set the honeypot channel for this guild. Use without args to clear."""

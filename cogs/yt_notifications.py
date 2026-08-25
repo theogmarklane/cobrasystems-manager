@@ -259,7 +259,7 @@ class YTNotifications(commands.Cog):
         except Exception:
             return None
 
-    @commands.command(name="ytsub")
+    @commands.hybrid_command(name="ytsub", description="Subscribe this server to a YouTube channel")
     @commands.has_permissions(manage_guild=True)
     async def ytsub(self, ctx, channel_identifier: str, notify_channel: discord.TextChannel = None, notify_role: discord.Role = None):
         """Subscribe this server to a YouTube channel's uploads. channel_identifier may be a channel ID or full channel URL.
@@ -306,7 +306,7 @@ class YTNotifications(commands.Cog):
         role_text = f" and ping {notify_role.mention}" if notify_role else ""
         await ctx.send(f"Subscribed to uploads from `{resolved}` and will notify in {notify_channel.mention}{role_text}.")
 
-    @commands.command(name="ytunsub")
+    @commands.hybrid_command(name="ytunsub", description="Remove a YouTube subscription from this server")
     @commands.has_permissions(manage_guild=True)
     async def ytunsub(self, ctx, channel_id: str):
         subs = self.bot.config.setdefault("youtube_subscriptions", [])

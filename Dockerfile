@@ -1,7 +1,8 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    COMMAND_SYNC_SCOPE=global
 
 WORKDIR /app
 
@@ -12,4 +13,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["python", "bot.py"]
+CMD ["python", "-u", "bot.py"]
