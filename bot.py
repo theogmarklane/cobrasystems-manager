@@ -4,6 +4,7 @@ import os
 import json
 import asyncio
 import logging
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from keep_alive import start_background
 
@@ -12,6 +13,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "cobrasystems")
 
 # Load config
 def load_config():
@@ -68,15 +70,18 @@ bot = commands.Bot(
     case_insensitive=True
 )
 
-# Initialize MongoDB if provided
+# Initialize MongoDB if provided. The client connects lazily, so the actual
+# connectivity check happens in setup_hook once the event loop is running.
 if MONGO_URI:
     try:
         import motor.motor_asyncio
-        # naive parse for DB name; use last path segment or default
-        db_name = MONGO_URI.rsplit("/", 1)[-1] or "ProjectSHDW"
         mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
+        parsed_db_name = urlparse(MONGO_URI).path.strip("/")
+        db_name = MONGO_DB_NAME or parsed_db_name or "cobrasystems"
+        bot.mongo_client = mongo_client
         bot.db = mongo_client[db_name]
-        print(f"✅ Connected to MongoDB database: {db_name}")
+        bot.mongo_db_name = db_name
+        print(f"🔌 MongoDB configured: {db_name}")
     except Exception as e:
         print(f"❌ Failed to initialize MongoDB: {e}")
 
@@ -176,6 +181,16 @@ async def setup_hook():
         print("↪️ setup_hook already completed; skipping duplicate startup")
         return
     bot._setup_complete = True
+
+    if hasattr(bot, "mongo_client"):
+        try:
+            await bot.mongo_client.admin.command("ping")
+            print(f"✅ Connected to MongoDB database: {bot.mongo_db_name}")
+        except Exception as e:
+            print(f"❌ MongoDB connection failed; using JSON fallback: {e}")
+            bot.mongo_client.close()
+            del bot.mongo_client
+            del bot.db
 
     # If MongoDB is available, attempt to load global config from DB
     if hasattr(bot, "db"):

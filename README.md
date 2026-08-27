@@ -103,7 +103,17 @@ DISCORD_TOKEN=MTIz...your_token_here
 OWNER_ID=123456789012345678
 # Optional: instant slash-command registration in one development server
 DISCORD_GUILD_ID=123456789012345678
+# Optional local MongoDB persistence
+MONGO_URI=mongodb://127.0.0.1:27017/cobrasystems
+MONGO_DB_NAME=cobrasystems
 ```
+
+With MongoDB running locally, the bot stores economy balances, cooldowns,
+server settings, warnings, reminders, and other migrated data in the
+`cobrasystems` database. MongoDB creates the database and collections when the
+bot first writes data. If the bot runs in Docker, `127.0.0.1` points inside the
+container; use a MongoDB service hostname or a host-accessible MongoDB URI
+instead.
 
 The Docker image loads every cog before registering commands. Set
 `DISCORD_GUILD_ID` in `.env` to preload all slash commands immediately in a
