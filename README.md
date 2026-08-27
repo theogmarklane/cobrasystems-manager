@@ -26,6 +26,13 @@ A powerful, modern Discord server management bot written in Python using **disco
 - `ping` / `uptime`
 - `userinfo` / `serverinfo` / `avatar` / `roleinfo`
 
+### 💰 Economy
+- `balance` — Check your balance or another member's balance
+- `daily` / `work` — Earn coins on cooldowns
+- `give` — Transfer coins to another member
+- `leaderboard` — Show the richest members in the server
+- `addmoney` / `removemoney` / `setmoney` / `resetmoney` — Manage balances as the bot owner, server owner, or a server administrator
+
 All commands work as both **slash commands** (`/ban`) and **prefix commands** (`!ban`).
 
 ---

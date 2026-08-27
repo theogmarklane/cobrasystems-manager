@@ -137,6 +137,17 @@ class Utility(commands.Cog):
         )
 
         embed.add_field(
+            name="💰 Economy",
+            value=(
+                "`balance` `give` `daily` `work`\n"
+                "`leaderboard`\n"
+                "Admin: `addmoney` `removemoney`\n"
+                "`setmoney` `resetmoney`"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
             name="📌 Quick Setup",
             value=(
                 "1. `/setlog #mod-logs` — Enable logging\n"

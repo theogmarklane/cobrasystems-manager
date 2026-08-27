@@ -271,6 +271,14 @@ async def on_command_error(ctx, error):
         )
         await send_response(ctx, embed=embed)
         return
+    if isinstance(error, commands.CheckFailure):
+        embed = discord.Embed(
+            title="⛔ Permission Denied",
+            description="This command is restricted to the bot owner, server owner, or server administrators.",
+            color=0xFF0000,
+        )
+        await send_response(ctx, embed=embed, ephemeral=True if getattr(ctx, "interaction", None) else False)
+        return
     if isinstance(error, commands.MissingRequiredArgument):
         embed = discord.Embed(
             title="⚠️ Missing Argument",
