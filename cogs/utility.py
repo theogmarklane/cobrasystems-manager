@@ -137,7 +137,24 @@ class Utility(commands.Cog):
         )
 
         embed.add_field(
-            name="💰 Economy",
+            name="� Tasks",
+            value=(
+                "`task` `tasks` `taskinfo`\n"
+                "`taskcomplete` `taskremove`"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="🛠️ Server Management",
+            value=(
+                "`announce` `setservername` `channelinfo`"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="�💰 Economy",
             value=(
                 "`balance` `give` `daily` `work`\n"
                 "`leaderboard`\n"

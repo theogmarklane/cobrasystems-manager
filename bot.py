@@ -158,6 +158,7 @@ async def load_cogs():
         "cogs.tags",
         "cogs.backup",
         "cogs.stats",
+        "cogs.server_management",
         "cogs.fun",
         "cogs.honeypot",
         "cogs.tickets",
